@@ -1,80 +1,78 @@
 import streamlit as st
 import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
-from sklearn.datasets import load_iris
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score
+import plotly.express as px
 
-# Load the Iris dataset
-iris = load_iris()
-iris_df = pd.DataFrame(iris.data, columns=iris.feature_names)
-iris_df['species'] = iris.target
-iris_df['species'] = iris_df['species'].apply(lambda x: iris.target_names[x])
+# Judul aplikasi
+st.title('Visualisasi Outcome Austin Animal Center Menggunakan Plotly')
 
-# Streamlit app layout
-st.title("Iris Flower Classification App")
-st.write("""
-### This app uses the Iris dataset to classify flowers into three species: 
-- Setosa
-- Versicolor
-- Virginica
-""")
+# Membaca dataset langsung dari folder
+csv_file_path = 'Austin_Animal_Center_Outcomes.csv'  # Ganti dengan nama file CSV yang sesuai
+df = pd.read_csv(csv_file_path)
 
-# Sidebar for user input
-st.sidebar.header("User Input Parameters")
-def user_input_features():
-    sepal_length = st.sidebar.slider("Sepal Length", 4.0, 8.0, 5.8)
-    sepal_width = st.sidebar.slider("Sepal Width", 2.0, 4.5, 3.0)
-    petal_length = st.sidebar.slider("Petal Length", 1.0, 7.0, 4.0)
-    petal_width = st.sidebar.slider("Petal Width", 0.1, 2.5, 1.2)
-    data = {
-        'sepal length (cm)': sepal_length,
-        'sepal width (cm)': sepal_width,
-        'petal length (cm)': petal_length,
-        'petal width (cm)': petal_width
-    }
-    return pd.DataFrame(data, index=[0])
-input_df = user_input_features()
+# Mengubah datatype DateTime
+df['DateTime'] = pd.to_datetime(df['DateTime'])
+df['Date of Birth'] = pd.to_datetime(df['Date of Birth'])
 
-# Display user input
-st.subheader("User Input Parameters")
-st.write(input_df)
+# Drop kolom tidak penting
+df = df.drop(columns=['Animal ID'])
 
-# Visualization: Pairplot
-if st.checkbox("Show Pairplot of the Dataset"):
-    st.subheader("Pairplot of the Iris Dataset")
-    viz = sns.pairplot(iris_df, hue='species', height=2.5)
-    st.pyplot(viz.figure)
+# Membuat kolom baru yang berisi hanya tahun outcome, bulan, dan hari
+df['year_outcome'] = df['DateTime'].dt.year
+df['month_outcome'] = df['DateTime'].dt.month
+df['day_outcome'] = df['DateTime'].dt.day
 
-# Split data into training and testing sets
-X = iris.data
-y = iris.target
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+# Membuat kolom baru yang berisi hanya tahun lahir, bulan, dan hari
+df['year_lahir'] = df['Date of Birth'].dt.year
+df['month_lahir'] = df['Date of Birth'].dt.month
+df['day_lahir'] = df['Date of Birth'].dt.day
 
-# Train a RandomForestClassifier
-model = RandomForestClassifier()
-model.fit(X_train, y_train)
-pred = model.predict(X_test)
+# Menghitung umur dalam bulan
+days = (df['DateTime'] - df['Date of Birth']).dt.days
+average_days_per_month = 30.44
+df['age_upon_outcome_months'] = days / average_days_per_month
 
-# Model accuracy
-accuracy = accuracy_score(y_test, pred)
-st.subheader("Model Accuracy")
-st.write(f"Accuracy: {accuracy * 100:.2f}%")
+# Drop kolom Outcome Subtype
+df = df.drop(columns=['Outcome Subtype'])
 
-# Prediction based on user input
-st.subheader("Prediction Based on User Input")
-prediction = model.predict(input_df)
-prediction_proba = model.predict_proba(input_df)
+# Handle missing values
+df['Name'] = df['Name'].fillna('No Name')
+df['Name'] = df['Name'].apply(lambda x: 'Has Name' if x != 'No Name' else 'No Name')
+df['Outcome Type'].fillna(df['Outcome Type'].mode()[0], inplace=True)
+df['Sex upon Outcome'].fillna(df['Sex upon Outcome'].mode()[0], inplace=True)
+df['Age upon Outcome'].fillna(df['Age upon Outcome'].mode()[0], inplace=True)
 
-st.write(f"Predicted Species: {iris.target_names[prediction][0]}")
-st.write("Prediction Probability:")
-st.write(prediction_proba)
+df = df.drop_duplicates()
 
-# Plot Feature Importances
-st.subheader("Feature Importances")
-importance = pd.Series(model.feature_importances_, index=iris.feature_names)
-viz_imp = importance.plot(kind='barh')
-st.pyplot(viz_imp.figure)
+# Select box untuk memilih visualisasi
+visualization_option = st.selectbox(
+    'Pilih visualisasi yang ingin ditampilkan:',
+    ['Distribusi Umur Hewan', 'Distribusi Tipe Hewan', 'Distribusi Outcome Type']
+)
 
+# Menampilkan visualisasi sesuai pilihan
+if visualization_option == 'Distribusi Umur Hewan':
+    st.subheader("Distribusi Umur Hewan dalam Bulan")
+    
+    # Filter untuk umur >= 0
+    valid_age_df = df[df['age_upon_outcome_months'] >= 0]
+
+    fig_age_months = px.histogram(valid_age_df, x='age_upon_outcome_months', nbins=20, title='Distribusi Umur Hewan dalam Bulan')
+    st.plotly_chart(fig_age_months)
+
+elif visualization_option == 'Distribusi Tipe Hewan':
+    st.subheader("Distribusi Tipe Hewan (Animal Type)")
+    animal_type_counts = df['Animal Type'].value_counts()
+    fig_animal_type = px.pie(
+        names=animal_type_counts.index,
+        values=animal_type_counts.values,
+        title='Distribusi Tipe Hewan',
+        hole=0.3,  # Untuk membuat donut chart
+        width=800,  # Menentukan lebar chart
+        height=600  # Menentukan tinggi chart
+    )
+    st.plotly_chart(fig_animal_type)
+
+elif visualization_option == 'Distribusi Outcome Type':
+    st.subheader("Distribusi Outcome Type")
+    fig_outcome_type = px.histogram(df, x='Outcome Type', title='Distribusi Outcome Type', color='Outcome Type', text_auto=True)
+    st.plotly_chart(fig_outcome_type)
